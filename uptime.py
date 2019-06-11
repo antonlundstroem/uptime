@@ -13,7 +13,6 @@ from enum import Enum
 # Fix threading so multiple instances can be ran simultaneously...
 # Read the things from a text file? Or do some other way...?
 
-
 class State(Enum):
     UP = "UP"
     DOWN = "DOWN"
@@ -28,8 +27,10 @@ class Host():
         return self.format_name(self.hostname)
 
     def format_name(self, host):
-        if "http://www." in host:
+        if "https://www." in host:
             return host
+        elif "www." in host:
+            return "http://" + host
         else:
             return "http://www." + host
 
@@ -79,7 +80,7 @@ class RequestHandler():
         return True
 
     def check_if_start_daemon(self):
-        txt = input("Webpage: " + self.host.get_name() + "seems to be down.\nDo you want to start the daemon to get notified when it comes back up?\n[y]/[n]: ")
+        txt = input("Webpage: " + self.host.get_name() + " seems to be down.\nDo you want to start the daemon to get notified when it comes back up?\n[y]/[n]: ")
         if (txt == "y" or txt == "yes"):
             return True
         elif (txt == "n" or txt == "no"):
@@ -96,20 +97,23 @@ class RequestHandler():
         while (self.host.get_state() == State.DOWN):
             print("doing daemon")
             self.do_request()
-            time.sleep(10)
+            time.sleep(10) # Set another value for the interval for which the daemon should be run, perhaps every minute?
 
 
 class CheckUptime():
     def run(self, hostname):
         host = Host(hostname)
         req = RequestHandler(host)
+        print("\nChecking webpage: " + host.get_name())
         
         if (req.check_if_up()):
             host.set_state(State.UP)
+            print(host.get_name() + " is up!")
+            os.system("/usr/bin/notify-send " + host.get_name() + " " + str(host.get_state().value))
+
         else:
             host.set_state(State.DOWN)
 
-        os.system("/usr/bin/notify-send -u critical " + host.get_name() + "is " + str(host.get_state()))
 
 
 if __name__ == '__main__':

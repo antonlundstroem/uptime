@@ -6,10 +6,17 @@ import urllib
 import threading
 import time
 import queue
+import os
+from enum import Enum
 
 # Do three requests? If all are 200, return as site is up. 
 # Fix threading so multiple instances can be ran simultaneously...
 # Read the things from a text file? Or do some other way...?
+
+
+class State(Enum):
+    UP = "UP"
+    DOWN = "DOWN"
 
 
 class Host():
@@ -29,8 +36,8 @@ class Host():
     def get_state(self):
         return self.state
     
-    def set_state(self, state):
-        self.state = state
+    def set_state(self, State):
+        self.state = State
 
 
 class RequestHandler():
@@ -41,32 +48,70 @@ class RequestHandler():
     
     def do_request(self): 
         try:
-            return urllib.request.urlopen(self.host.get_name(), timeout=5).getcode()
+            # Set timeout to other int when implementing, maybe make able to set personal timeout
+            urllib.request.urlopen(self.host.get_name(), timeout=5).getcode() 
+            self.host.set_state(State.UP)
         except TimeoutError:
-           return 408
-        except socket.timeout:
-            return 408
-        except URLError:
-            return 404
-        
-    def check_if_up(self):
-        t = threading.Thread(target=self._check_if_up)
-        t.start()
+            self.host.set_state(State.DOWN)
 
-    def _check_if_up(self):
+        except socket.timeout:
+            self.host.set_state(State.DOWN)
+
+        except URLError:
+            self.host.set_state(State.DOWN)
+
+    def check_if_up(self):
         counter = 0;
         while counter < 3:
-            code = self.do_request()
-            if (code != 200):
-                return False
+            self.do_request() # Does request to the hosts url
+            if (self.host.get_state() == State.DOWN): # Checks if hosts is down
+                if(self.check_if_start_daemon()): # Checks if user wants to start the daemon for the host
+                    self.start_thread_daemon() # Starts the daemon for the host
+                    #
+                    # Here the daemon should be started and maybe not return false. That is the job for the thread to return true when its back up!
+                    #
+                    return False
+                else:
+                    return False
             counter = counter + 1
             time.sleep(1)
 
         return True
 
+    def check_if_start_daemon(self):
+        txt = input("Webpage: " + self.host.get_name() + "seems to be down.\nDo you want to start the daemon to get notified when it comes back up?\n[y]/[n]: ")
+        if (txt == "y" or txt == "yes"):
+            return True
+        elif (txt == "n" or txt == "no"):
+            return False
+        else:
+            self.check_if_start_daemon()
+
+
+    def start_thread_daemon(self):
+        t = threading.Thread(target=self.daemon)
+        t.start()
+
+    def daemon(self):
+        while (self.host.get_state() == State.DOWN):
+            print("doing daemon")
+            self.do_request()
+            time.sleep(10)
+
+
+class CheckUptime():
+    def run(self, hostname):
+        host = Host(hostname)
+        req = RequestHandler(host)
+        
+        if (req.check_if_up()):
+            host.set_state(State.UP)
+        else:
+            host.set_state(State.DOWN)
+
+        os.system("/usr/bin/notify-send -u critical " + host.get_name() + "is " + str(host.get_state()))
+
 
 if __name__ == '__main__':
-    hostname = sys.argv[1]
-    host = Host(hostname)
-    rq = RequestHandler(host)
-    print(rq.check_if_up())
+    for i in range (len(sys.argv)-1):
+        CheckUptime().run(sys.argv[i+1])
